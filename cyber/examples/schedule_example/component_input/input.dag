@@ -1,0 +1,10 @@
+# Define all coms in DAG streaming.
+    module_config {
+    module_library : "/apollo/bazel-bin/cyber/examples/schedule_example/component_input/libcomponent_input.so"
+    components {
+        class_name : "ComponentInput"
+        config {
+            name : "Input"
+        }
+      }
+    }

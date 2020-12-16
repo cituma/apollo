@@ -1,0 +1,13 @@
+# Define all coms in DAG streaming.
+    module_config {
+    module_library : "/apollo/bazel-bin/cyber/examples/schedule_example/component_b/libcomponent_b.so"
+    components {
+        class_name : "ComponentB"
+        config {
+            name : "B"
+            readers {
+                channel: "/apollo/output_a"
+            }
+        }
+      }
+    }
