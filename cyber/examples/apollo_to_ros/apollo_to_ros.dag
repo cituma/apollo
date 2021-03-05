@@ -1,0 +1,13 @@
+# Define all coms in DAG streaming.
+    module_config {
+    module_library : "/apollo/bazel-bin/cyber/examples/apollo_to_ros/libapollo_to_ros.so"
+    components {
+        class_name : "ApolloToRos"
+        config {
+            name : "pointcloud2"
+            readers {
+                channel: "/apollo/sensor/velodyne64/compensator/PointCloud2"
+            }
+        }
+      }
+    }

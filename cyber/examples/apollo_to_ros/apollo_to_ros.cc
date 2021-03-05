@@ -13,27 +13,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *****************************************************************************/
+#include "cyber/examples/apollo_to_ros/apollo_to_ros.h"
+#include <thread>
+#include <sched.h>
+#include <sys/resource.h>
+#include <sys/syscall.h>
 
-#include "cyber/examples/proto/examples.pb.h"
+using apollo::cyber::Time;
 
-#include "cyber/cyber.h"
-
-void MessageCallback(
-    const std::shared_ptr<apollo::cyber::examples::proto::Chatter>& msg) {
-  AINFO << "Received message seq-> " << msg->seq();
-  AINFO << "msgcontent->" << msg->content();
+bool ApolloToRos::Init() {
+  AINFO << "ApolloToRos init";
+  return true;
 }
 
-int main(int argc, char* argv[]) {
-  // init cyber framework
-  apollo::cyber::Init(argv[0]);
-  google::LogToStderr();
-  // create listener node
-  auto listener_node = apollo::cyber::CreateNode("listener");
-  // create listener
-  auto listener =
-      listener_node->CreateReader<apollo::cyber::examples::proto::Chatter>(
-          "channel/chatter", MessageCallback);
-  apollo::cyber::WaitForShutdown();
-  return 0;
+bool ApolloToRos::Proc(const std::shared_ptr<PointCloud>& point_cloud) {
+  AINFO << "frame id:" << point_cloud->frame_id() << ", width:" << point_cloud->width()
+        << ", height:" << point_cloud->height();
+  return true;
 }

@@ -27,6 +27,7 @@ using apollo::cyber::examples::proto::Chatter;
 int main(int argc, char *argv[]) {
   // init cyber framework
   apollo::cyber::Init(argv[0]);
+  google::LogToStderr();
   // create talker node
   auto talker_node = apollo::cyber::CreateNode("talker");
   // create talker

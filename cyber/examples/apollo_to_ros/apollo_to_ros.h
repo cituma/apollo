@@ -13,27 +13,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *****************************************************************************/
-
-#include "cyber/examples/proto/examples.pb.h"
+#include <memory>
 
 #include "cyber/cyber.h"
+#include "cyber/component/component.h"
+#include "modules/drivers/proto/pointcloud.pb.h"
 
-void MessageCallback(
-    const std::shared_ptr<apollo::cyber::examples::proto::Chatter>& msg) {
-  AINFO << "Received message seq-> " << msg->seq();
-  AINFO << "msgcontent->" << msg->content();
-}
+using apollo::cyber::Component;
+using apollo::cyber::ComponentBase;
+using apollo::drivers::PointCloud;
 
-int main(int argc, char* argv[]) {
-  // init cyber framework
-  apollo::cyber::Init(argv[0]);
-  google::LogToStderr();
-  // create listener node
-  auto listener_node = apollo::cyber::CreateNode("listener");
-  // create listener
-  auto listener =
-      listener_node->CreateReader<apollo::cyber::examples::proto::Chatter>(
-          "channel/chatter", MessageCallback);
-  apollo::cyber::WaitForShutdown();
-  return 0;
-}
+class ApolloToRos : public Component<PointCloud> {
+ public:
+  bool Init() override;
+  bool Proc(const std::shared_ptr<PointCloud>& point_cloud) override;
+};
+CYBER_REGISTER_COMPONENT(ApolloToRos)
