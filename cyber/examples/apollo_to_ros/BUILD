@@ -3,12 +3,28 @@ load("//tools:cpplint.bzl", "cpplint")
 
 package(default_visibility = ["//visibility:public"])
 
+#cc_binary(
+#    name = "libapollo_to_ros.so",
+#    linkshared = True,
+#    linkstatic = False,
+#    deps = [":apollo_to_ros_lib"],
+#)
+
 cc_binary(
-    name = "libapollo_to_ros.so",
-    linkshared = True,
-    linkstatic = False,
+    name = "ros_server",
+    srcs = ["ros_server.cc"],
     deps = [":apollo_to_ros_lib"],
 )
+
+cc_binary(
+    name = "ros_client_demo",
+    srcs = ["ros_client/ros_client.cc"],
+    deps = [
+        "//cyber",
+        "//modules/drivers/proto:pointcloud_cc_proto",
+    ],
+)
+
 
 cc_library(
     name = "apollo_to_ros_lib",

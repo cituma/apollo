@@ -25,8 +25,10 @@
 
 using apollo::cyber::Component;
 using apollo::cyber::ComponentBase;
-using apollo::drivers::PointCloud;
+using apollo::cyber::Node;
+using apollo::cyber::Reader;
 using apollo::cyber::io::Session;
+using apollo::drivers::PointCloud;
 
 template <typename T>
 class SyncQueue {
@@ -42,6 +44,7 @@ class SyncQueue {
     m_notEmpty.wait(locker, [this] { return (m_needStop || NotEmpty()); });
     if (m_needStop) return;
     list = std::move(m_queue);
+    m_queue.clear();
     m_notFull.notify_one();
   }
 
@@ -81,7 +84,9 @@ class SyncQueue {
   int Count() { return m_queue.size(); }
 
  private:
-  bool NotFull() const { return (static_cast<int>(m_queue.size()) < m_maxSize); }
+  bool NotFull() const {
+    return (static_cast<int>(m_queue.size()) < m_maxSize);
+  }
   bool NotEmpty() const { return !m_queue.empty(); }
 
   void Add(const T& x) {
@@ -110,17 +115,31 @@ class SyncQueue {
   bool m_needStop;
 };
 
-class ApolloToRos : public Component<PointCloud> {
+class SendMessage {
  public:
-  ~ApolloToRos();
+  SendMessage();
+  ~SendMessage();
 
-  bool Init() override;
-  bool Proc(const std::shared_ptr<PointCloud>& point_cloud) override;
+  void Init(uint16_t server_port);
+
+  void Destroy();
 
  private:
-  void SendData(const std::shared_ptr<Session>& session);
+  void PointCloudReader();
+  void HandlePointCloud(const std::shared_ptr<PointCloud>& point_cloud);
+
+  bool InitSocket(uint16_t server_port);
+  void AcceptSocket();
+  void SendSocket(const std::shared_ptr<Session>& session);
 
  private:
-  SyncQueue<std::shared_ptr<PointCloud> > queue_;
+  bool running_ = false;
+  std::unique_ptr<Node> listener_node_;
+  std::shared_ptr<Reader<PointCloud>> listener_;
+
+  Session session_;
+  SyncQueue<std::shared_ptr<PointCloud>> queue_;
+
+  std::future<void> async_accept_;
+  //std::vector<std::future<void>> async_read_list_;
 };
-CYBER_REGISTER_COMPONENT(ApolloToRos)
