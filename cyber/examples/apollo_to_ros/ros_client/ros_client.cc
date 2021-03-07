@@ -29,20 +29,45 @@
 
 using apollo::cyber::io::Session;
 
+static inline int SessionRecv(Session& session, void* buf, int size) {
+  int recv_size = 0;
+  while (recv_size != size) {
+    char* data_buf = static_cast<char*>(buf) + recv_size;
+    int nbytes =
+        static_cast<int>(session.Recv(data_buf, size - recv_size, 0));
+    if (nbytes == 0) {
+      AINFO << "server has been closed.";
+      session.Close();
+      return nbytes;
+    }
+
+    if (nbytes < 0) {
+      AINFO << "receive message from server failed.";
+      session.Close();
+      return nbytes;
+    }
+    recv_size += nbytes;
+  }
+
+  return recv_size;
+}
+
 int main(int argc, char* argv[]) {
   apollo::cyber::Init(argv[0]);
   google::LogToStderr();
 
+  size_t recv_buf_size = 10 * 1024 * 1024;
+
   uint16_t server_port = 11435;
   apollo::cyber::scheduler::Instance()->CreateTask(
-      [&server_port]() {
+      [&server_port, &recv_buf_size]() {
         struct sockaddr_in server_addr;
         server_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
         server_addr.sin_family = AF_INET;
         server_addr.sin_port = htons((uint16_t)server_port);
 
         std::string user_input;
-        std::vector<char> recv_buf(1024*1024);
+        std::vector<char> recv_buf(recv_buf_size);
 
         Session session;
         session.Socket(AF_INET, SOCK_STREAM, 0);
@@ -54,20 +79,17 @@ int main(int argc, char* argv[]) {
         }
 
         while (true) {
-          ssize_t nbytes = session.Recv(recv_buf.data(), recv_buf.size(), 0);
+          size_t size = 0;
+          int nbytes = SessionRecv(session, &size, sizeof(size_t));
+          if (nbytes <= 0) return;
 
-          if (nbytes == 0) {
-            AINFO << "server has been closed.";
-            session.Close();
-            return;
+          if (size > recv_buf_size) {
+            recv_buf_size = size;
+            recv_buf.resize(size);
           }
 
-          if (nbytes < 0) {
-            AINFO << "receive message from server failed.";
-            session.Close();
-            return;
-          }
-
+          nbytes = SessionRecv(session, recv_buf.data(), size);
+          if (nbytes <= 0) return;
           AINFO << "recv size:" << nbytes;
         }
       },

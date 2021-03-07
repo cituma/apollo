@@ -29,7 +29,10 @@ cc_binary(
 cc_library(
     name = "apollo_to_ros_lib",
     srcs = ["apollo_to_ros.cc"],
-    hdrs = ["apollo_to_ros.h"],
+    hdrs = [
+            "apollo_to_ros.h",
+            "apollo_pointcloud.h",
+            ],
     deps = [
         "//cyber",
         "//modules/drivers/proto:pointcloud_cc_proto",

@@ -131,6 +131,8 @@ class SendMessage {
   bool InitSocket(uint16_t server_port);
   void AcceptSocket();
   void SendSocket(const std::shared_ptr<Session>& session);
+  int SessionSend(const std::shared_ptr<Session>& session,
+                               const void* buf, size_t size);
 
  private:
   bool running_ = false;
