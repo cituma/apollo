@@ -14,12 +14,12 @@
  * limitations under the License.
  *****************************************************************************/
 #include "cyber/examples/apollo_to_ros/apollo_to_ros.h"
-#include "cyber/examples/apollo_to_ros/apollo_pointcloud.h"
 #include <sched.h>
 #include <sys/resource.h>
 #include <sys/syscall.h>
 #include <thread>
 #include "cyber/cyber.h"
+#include "cyber/examples/apollo_to_ros/apollo_pointcloud.h"
 
 using apollo::cyber::Time;
 
@@ -33,8 +33,12 @@ SendMessage::~SendMessage() {
 
 void SendMessage::Init(uint16_t server_port) {
   AINFO << "SendMessage Init";
+  bool bret = InitSocket(server_port);
+  if (!bret) {
+    AINFO << "Init Socket failed!";
+    return;
+  }
   running_ = true;
-  InitSocket(server_port);
   async_accept_ = apollo::cyber::Async(&SendMessage::AcceptSocket, this);
 
   PointCloudReader();
@@ -44,10 +48,15 @@ void SendMessage::Destroy() {
   if (!running_) return;
   running_ = false;
   AINFO << "SendMessage Destroy";
+
+  std::vector<std::shared_ptr<Session>> all_session;
+  session_set_.GetAllData(all_session);
+  for (auto& session : all_session) {
+    session->Close();
+  }
+  session_set_.Clear();
+
   session_.Close();
-  // for (auto& async_read : async_read_list_) {
-  //  async_read.wait();
-  //}
   async_accept_.wait();
 }
 
@@ -65,7 +74,14 @@ void SendMessage::HandlePointCloud(
         << ", width:" << point_cloud->width()
         << ", height:" << point_cloud->height();
 
-  queue_.Put(point_cloud);
+  std::vector<std::shared_ptr<Session>> all_session;
+  session_set_.GetAllData(all_session);
+  for (auto& session : all_session) {
+    bool bret = SendPointCloud(session, point_cloud);
+    if (!bret) {
+      session_set_.Erase(session);
+    }
+  }
 }
 
 bool SendMessage::InitSocket(uint16_t server_port) {
@@ -88,24 +104,18 @@ bool SendMessage::InitSocket(uint16_t server_port) {
 }
 
 void SendMessage::AcceptSocket() {
-  // while(running_) {
-  auto conn_session = session_.Accept((struct sockaddr*)nullptr, nullptr);
-  AINFO << "Accepted";
-  auto routine_name =
-      "connected session" + std::to_string(Time::Now().ToNanosecond());
-  // async_read_list_.push_back(apollo::cyber::Async(&SendMessage::SendSocket,
-  // this, conn_session));
-  SendSocket(conn_session);
-  AINFO << "SendSocket end!";
-  //}
+  while (running_) {
+    auto conn_session = session_.Accept((struct sockaddr*)nullptr, nullptr);
+    session_set_.Insert(conn_session);
+  }
 }
 
 int SendMessage::SessionSend(const std::shared_ptr<Session>& session,
                              const void* buf, size_t size) {
   size_t snd_size = 0;
-  while(snd_size != size) {
+  while (snd_size != size) {
     const char* data_buf = static_cast<const char*>(buf) + snd_size;
-    int nbytes = static_cast<int>(session->Write(data_buf, size-snd_size));
+    int nbytes = static_cast<int>(session->Write(data_buf, size - snd_size));
     if (nbytes == 0) {
       AINFO << "client has been closed.";
       session->Close();
@@ -124,49 +134,32 @@ int SendMessage::SessionSend(const std::shared_ptr<Session>& session,
   return static_cast<int>(snd_size);
 }
 
-void SendMessage::SendSocket(const std::shared_ptr<Session>& session) {
-  while (running_) {
-    std::list<std::shared_ptr<PointCloud> > list;
-    queue_.Take(list);
-
-    for (auto point_cloud : list) {
-#if 1
-      uint32_t width = point_cloud->width();
-      uint32_t height = point_cloud->height();
-      ApolloPointCloud apollo_pointcloud(width, height);
-      for(uint32_t i=0;i<width * height; ++i) {
-        apollo_pointcloud.points[i].x = point_cloud->point(i).x();
-        apollo_pointcloud.points[i].y = point_cloud->point(i).y();
-        apollo_pointcloud.points[i].z = point_cloud->point(i).z();
-      }
-
-      std::vector<char> snd_buf;
-      apollo_pointcloud.Serialize(snd_buf);
-
-      size_t size = snd_buf.size();
-      AINFO << "server send size:" << size;
-      int nbytes = SessionSend(session, (const void*)(&size), sizeof(size_t));
-      if (nbytes <= 0) return;
-
-      nbytes =
-          SessionSend(session, snd_buf.data(), snd_buf.size());
-      if (nbytes <= 0) return;
-      AINFO << "snd data size:" << nbytes;
-#else
-      std::string point_cloud_str;
-      if (!point_cloud->SerializeToString(&point_cloud_str)) {
-        AINFO << "SerializeToString failed!";
-        continue;
-      }
-      size_t size = point_cloud_str.size();
-      AINFO << "server send size:" << point_cloud_str.size();
-      int nbytes = SessionSend(session, (const void*)(&size), sizeof(size_t));
-      if (nbytes <= 0) return;
-
-      nbytes =
-          SessionSend(session, point_cloud_str.c_str(), point_cloud_str.size());
-      if (nbytes <= 0) return;
-#endif
-    }
+bool SendMessage::SendPointCloud(
+    const std::shared_ptr<Session>& session,
+    const std::shared_ptr<PointCloud>& point_cloud) {
+  uint32_t width = point_cloud->width();
+  uint32_t height = point_cloud->height();
+  ApolloPointCloud apollo_pointcloud(width, height);
+  for (uint32_t i = 0; i < width * height; ++i) {
+    apollo_pointcloud.points[i].x = point_cloud->point(i).x();
+    apollo_pointcloud.points[i].y = point_cloud->point(i).y();
+    apollo_pointcloud.points[i].z = point_cloud->point(i).z();
   }
+
+  std::vector<char> snd_buf;
+  apollo_pointcloud.Serialize(snd_buf);
+
+  size_t size = snd_buf.size();
+  // AINFO << "server send size:" << size;
+  int nbytes = SessionSend(session, (const void*)(&size), sizeof(size_t));
+  if (nbytes <= 0) {
+    return false;
+  }
+
+  nbytes = SessionSend(session, snd_buf.data(), snd_buf.size());
+  if (nbytes <= 0) {
+    return false;
+  }
+  AINFO << "server data size:" << nbytes;
+  return true;
 }

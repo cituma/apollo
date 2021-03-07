@@ -14,7 +14,9 @@
  * limitations under the License.
  *****************************************************************************/
 #include <memory>
+#include <unordered_set>
 
+#include "cyber/base/atomic_rw_lock.h"
 #include "cyber/component/component.h"
 #include "cyber/cyber.h"
 #include "cyber/io/session.h"
@@ -29,6 +31,10 @@ using apollo::cyber::Node;
 using apollo::cyber::Reader;
 using apollo::cyber::io::Session;
 using apollo::drivers::PointCloud;
+
+using apollo::cyber::base::AtomicRWLock;
+using apollo::cyber::base::ReadLockGuard;
+using apollo::cyber::base::WriteLockGuard;
 
 template <typename T>
 class SyncQueue {
@@ -115,6 +121,58 @@ class SyncQueue {
   bool m_needStop;
 };
 
+template <typename T>
+class SyncSet {
+ public:
+  using set_type = std::unordered_set<T>;
+  using iterator = typename set_type::iterator;
+
+  SyncSet() {}
+  ~SyncSet() { Clear(); }
+
+  iterator begin() {
+    ReadLockGuard<AtomicRWLock> lck(lock_);
+    return m_set_.begin();
+  }
+
+  iterator end() {
+    WriteLockGuard<AtomicRWLock> lck(lock_);
+    return m_set_.end();
+  }
+
+  void Insert(const T& data) {
+    WriteLockGuard<AtomicRWLock> lck(lock_);
+    m_set_.insert(data);
+  }
+
+  size_t Erase(const T& data) {
+    WriteLockGuard<AtomicRWLock> lck(lock_);
+    return m_set_.erase(data);
+  }
+
+  iterator Erase(const iterator& it) {
+    WriteLockGuard<AtomicRWLock> lck(lock_);
+    return m_set_.erase(it);
+  }
+
+  void Clear() {
+    WriteLockGuard<AtomicRWLock> lck(lock_);
+    m_set_.clear();
+  }
+
+  void GetAllData(std::vector<T>& data) {
+    ReadLockGuard<AtomicRWLock> lck(lock_);
+    data.clear();
+    for (auto it = m_set_.begin(); it != m_set_.end(); ++it) {
+      data.push_back(*it);
+    }
+  }
+
+ private:
+  std::unordered_set<T> m_set_;
+  AtomicRWLock lock_;
+};
+
 class SendMessage {
  public:
   SendMessage();
@@ -130,9 +188,11 @@ class SendMessage {
 
   bool InitSocket(uint16_t server_port);
   void AcceptSocket();
-  void SendSocket(const std::shared_ptr<Session>& session);
-  int SessionSend(const std::shared_ptr<Session>& session,
-                               const void* buf, size_t size);
+  int SessionSend(const std::shared_ptr<Session>& session, const void* buf,
+                  size_t size);
+
+  bool SendPointCloud(const std::shared_ptr<Session>& session,
+                      const std::shared_ptr<PointCloud>& point_cloud);
 
  private:
   bool running_ = false;
@@ -140,8 +200,8 @@ class SendMessage {
   std::shared_ptr<Reader<PointCloud>> listener_;
 
   Session session_;
-  SyncQueue<std::shared_ptr<PointCloud>> queue_;
+  SyncSet<std::shared_ptr<Session>> session_set_;
 
   std::future<void> async_accept_;
-  //std::vector<std::future<void>> async_read_list_;
+  // std::vector<std::future<void>> async_read_list_;
 };
